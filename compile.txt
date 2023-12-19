@@ -1,0 +1,4 @@
+mpicc -o main.out .....
+(--mca opal_warn_on_missing_libcuda 0)
+mpirun -hostfile host main.out 
+ "/opt/homebrew/Cellar/open-mpi/5.0.0/include/**"
