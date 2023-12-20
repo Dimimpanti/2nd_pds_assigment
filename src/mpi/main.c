@@ -94,13 +94,15 @@ int main(int argc, char **argv) {
     // Read data from the file
     info.A = readFromFile(argv[1], info.world_rank, info.world_size, &info.size);
 
-     // Time measurement starts after the points are read
+    // Time measurement starts after the points are read
     if (info.world_rank == 0){
         start = MPI_Wtime();
     }
 
+    int result;  // The result of the algorithm
+
     if (info.world_rank == 0) {
-        masterProcess(info.world_rank, min_rank, max_rank, &info, MPI_COMM_WORLD);
+        masterProcess(info.world_rank, min_rank, max_rank, &info, MPI_COMM_WORLD, &result);
     } else {
         slaveProcess(info.world_rank, min_rank, max_rank, &info, MPI_COMM_WORLD);
     }
@@ -109,13 +111,16 @@ int main(int argc, char **argv) {
     // Wait here for all the processes to finish before time measurement
     MPI_Barrier(MPI_COMM_WORLD);
    
-   //Time measurement ends here
+    //Time measurement ends here
     if (info.world_rank == 0){
         end = MPI_Wtime();
 
         printf("\nTime for execution: %.6f\n", end - start);
 
     }
+
+
+    free(info.A);
 
     // Finalize the MPI environment.
     MPI_Finalize();
