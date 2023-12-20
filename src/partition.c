@@ -3,32 +3,34 @@
 #include "partition.h"
 
 
-PivotedArrays partition(int* A, int size, int pivot) {
-    PivotedArrays result;
-    result.left = (int*)malloc(size * sizeof(int));
-    result.middle = (int*)malloc(size * sizeof(int));
-    result.right = (int*)malloc(size * sizeof(int));
+PivotedArrays *partition(int* A, int size, int pivot) {
+    PivotedArrays *result = (PivotedArrays*)malloc(sizeof(PivotedArrays));
+
+    result->left = (int*)malloc(size * sizeof(int));
+    result->middle = (int*)malloc(size * sizeof(int));
+    result->right = (int*)malloc(size * sizeof(int));
 
     int leftIndex = 0, middleIndex = 0, rightIndex = 0;
 
     for(int i = 0 ;i < size ; i++){
         //Elements less than pivot
         if(A[i] < pivot){
-            result.left[leftIndex++] = A[i];
+            result->left[leftIndex++] = A[i];
         }
         //Elements equal to pivot
         else if(A[i] == pivot){
-            result.middle[middleIndex++] = A[i];
+            result->middle[middleIndex++] = A[i];
         }
         //Elements greater than pivot
         else{
-            result.right[rightIndex++] = A[i];
+            result->right[rightIndex++] = A[i];
         }
     }
 
-    result.leftSize = leftIndex;
-    result.middleSize = middleIndex;
-    result.rightSize = rightIndex;
+    result->leftSize = leftIndex;
+    result->middleSize = middleIndex;
+    result->rightSize = rightIndex;
+
     return result;
 }
 
@@ -38,23 +40,23 @@ int kselect(int* A, int size, int k , int pivot) {
     if (k > 0 && k <= size) {
     
         // Partition the array using the pivot
-        PivotedArrays result = partition(A, size, pivot);
+        PivotedArrays *result = partition(A, size, pivot);
 
         // Recursively find k-th smallest in the appropriate partition
-        if (k <= result.leftSize) {
-            return kselect(result.left, result.leftSize, k , pivot) ;
+        if (k <= result->leftSize) {
+            return kselect(result->left, result->leftSize, k , pivot) ;
         } 
         
-        else if (k <= result.leftSize + result.middleSize) {
+        else if (k <= result->leftSize + result->middleSize) {
             return pivot;
         } 
         
         else {
-            return kselect(result.right, result.rightSize, k - result.leftSize - result.middleSize , pivot);
+            return kselect(result->right, result->rightSize, k - result->leftSize - result->middleSize , pivot);
         }
-    free(result.left);
-    free(result.middle);
-    free(result.right);
+    free(result->left);
+    free(result->middle);
+    free(result->right);
 
     } 
     
