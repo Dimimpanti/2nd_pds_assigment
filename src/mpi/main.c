@@ -4,16 +4,27 @@
 #include <limits.h>
 
 #include "../partition.h"
+#include "../structs.h"
+#include "masterProcess.h"
+#include "slaveProcess.h"
 
 
-
-int *readFromFile(char *fileName, int rank, int worldSize, int *values) {
+/**
+ * @brief Every process reads it's part of the array from the file
+ * 
+ * @param fileName   The name of the file
+ * @param rank       The rank of the current process
+ * @param worldSize  The total number of processes
+ * @param numValues  The number of values that the current process will handle
+ * @return int*      
+ */
+int *readFromFile(char *fileName, int rank, int worldSize, int *numValues) {
    
-   FILE *file = NULL;  // File pointer
-    file = fopen("data.txt", "r");  // Open the file for reading
+    FILE *file = fopen(fileName, "r");  // Open the file for reading
 
     // Check if the file is open
     if (file == NULL) {
+
         if (rank == 0) {
             printf("\nCan not find file %s. Program will now exit...\n\n", fileName);
         }
@@ -23,24 +34,35 @@ int *readFromFile(char *fileName, int rank, int worldSize, int *values) {
         exit(0);
     }
 
-    int numOfInts;  // The number of elements in the file
+    int numOfInts = 0;  // The number of elements in the file
+    int tmp;        // Temporary variable for reading the file
 
-   // Read the total elements from the file
-    fread(&numOfInts, sizeof(int), 1, file);
-
-    // Calculate the size of the array that each process will have to handle 
-    int intsPerProcess = numOfInts / worldSize;
+    // count the number of integers in the file
+    while (fscanf(file, "%d", &tmp) != EOF) {
+        numOfInts++;
+    }
     
-    printf("Each process will handle %d integers\n", intsPerProcess);
+    // Move the file pointer to the start of the file
+    fseek(file, 0, SEEK_SET);
 
-    // Move file pointer to the start position for the current process
-    fseek(file, rank * intsPerProcess * sizeof(int), SEEK_SET);
+    // Calculate the size of the array that each process will have to handle. The remainder is discarded.
+    *numValues = numOfInts / worldSize;
+    
+    printf("Process %d will handle %d numbers\n", rank, *numValues);
+
+    // skip the integers that the previous processes will handle
+    for (int i = 0; i < rank * (*numValues); i++) {
+        fscanf(file, "%d", &tmp);
+    }
+    
 
     // Allocate memory for the local array
-    values = (int *)malloc(intsPerProcess * sizeof(int));
+    int *values = (int *)malloc(*numValues * sizeof(int));  // TODO free this memory
 
     // Read the integers for the current process
-    fread(values, sizeof(int), intsPerProcess, file);
+    for (int i = 0; i < *numValues; i++) {
+        fscanf(file, "%d", &values[i]);
+    }
 
     // Close the file
     fclose(file);
@@ -70,7 +92,7 @@ int main(int argc, char **argv) {
 
 
     // Read data from the file
-    info.A = readFromFile(argv[1], info.world_rank, info.world_size, info.A);
+    info.A = readFromFile(argv[1], info.world_rank, info.world_size, &info.size);
 
      // Time measurement starts after the points are read
     if (info.world_rank == 0){
