@@ -1,9 +1,11 @@
+#include "masterProcess.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <mpi.h>
+
 #include "partition.h"
-#include "masterProcess.h"
+
 
 #define endRecursion 100
 
