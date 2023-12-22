@@ -48,8 +48,6 @@ int *readFromFile(char *fileName, int rank, int worldSize, int *numValues) {
     // Calculate the size of the array that each process will have to handle. The remainder is discarded.
     *numValues = numOfInts / worldSize;
     
-    printf("Process %d will handle %d numbers\n", rank, *numValues);
-
     // skip the integers that the previous processes will handle
     for (int i = 0; i < rank * (*numValues); i++) {
         fscanf(file, "%d", &tmp);
@@ -76,12 +74,14 @@ int main(int argc, char **argv) {
     //Initialize the MPI communication
     MPI_Init(&argc, &argv);
 
-    double start, end;  // Time measuring
-    
+
+    if (argc != 3) {
+        printf("\nUsage: %s <input_file> <k>\n\n", argv[0]);
+        MPI_Finalize();
+        exit(EXIT_FAILURE);
+    }
+
     Info info;  // The info struct holds information for every process 
-    int min_rank = 0;
-    int max_rank = info.world_size;
-    
     
     // Get the number of processes
     MPI_Comm_size(MPI_COMM_WORLD, &info.world_size);
@@ -94,33 +94,42 @@ int main(int argc, char **argv) {
     // Read data from the file
     info.A = readFromFile(argv[1], info.world_rank, info.world_size, &info.size);
 
+    double start, end;  // Time measuring
     // Time measurement starts after the points are read
     if (info.world_rank == 0){
         start = MPI_Wtime();
     }
 
     int result;  // The result of the algorithm
+    int k = atoi(argv[2]);  // parse the k-th smallest element from the command line arguments
+    info.k = k;  // The k-th smallest element
+    
 
+    int min_rank = 0;
+    int max_rank = info.world_size - 1;
+    
     if (info.world_rank == 0) {
-        masterProcess(info.world_rank, min_rank, max_rank, &info, MPI_COMM_WORLD, &result);
+        masterProcess(0, min_rank, max_rank, &info, MPI_COMM_WORLD, &result);
     } else {
-        slaveProcess(info.world_rank, min_rank, max_rank, &info, MPI_COMM_WORLD);
+        slaveProcess(0, min_rank, max_rank, &info, MPI_COMM_WORLD);
     }
 
+    // Print the result
+    if (info.world_rank == 0) {
+        printf("\nThe %d-th smallest element is: %d\n", k, result);
+    }
 
     // Wait here for all the processes to finish before time measurement
     MPI_Barrier(MPI_COMM_WORLD);
    
-    //Time measurement ends here
+    // Time measurement ends here
     if (info.world_rank == 0){
         end = MPI_Wtime();
 
-        printf("\nTime for execution: %.6f\n", end - start);
+        printf("\nTime for MPI execution: %.6fs\n", end - start);
 
     }
 
-
-    free(info.A);
 
     // Finalize the MPI environment.
     MPI_Finalize();
