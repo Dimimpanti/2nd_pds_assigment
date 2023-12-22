@@ -5,6 +5,6 @@
 
 
 PivotedArrays *partition(int* A, int size, int pivot);
-int kselect(int* A, int size, int k, int pivot);
+int kselect(int* A, int size, int k);
 
 #endif
