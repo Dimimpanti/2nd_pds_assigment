@@ -1,9 +1,124 @@
+#include "slaveProcess.h"
+
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-//#include <mpi.h>
+
 #include "partition.h"
-#include "slaveProcess.h"
+
+
+/**
+ * @brief Balance the number of points that remain in the array of each process
+ * 
+ * @param points       The array of points
+ * @param numPoints    The number of points of the process
+ * @param worldSize    The total number of processes
+ * @param min_rank     The smallest rank
+ * @param max_rank     The biggest rank
+ * @param rank         The rank of the current process
+ * @param communicator The MPI communicator
+ * 
+ */
+void balancePointsSlave(int **points, int *numPoints, int worldSize, int min_rank, int max_rank, int rank, MPI_Comm communicator){
+    
+    // print the initial points of each process
+    // printf("\t\t\t\tinitial points\n\t\t\t\t");
+
+    // for(int i = 0; i < *numPoints; i++){
+    //     printf("%d ", points[i]);
+    // }
+
+    // printf("\n");
+
+    // Vectors that will hold the receive and send counts for each process
+    int *sendCounts = (int *)malloc(worldSize * sizeof(int));  // TODO: free this
+    int *recvCounts = (int *)malloc(worldSize * sizeof(int));  // TODO: free this
+    
+    MPI_Request request[2];
+
+    MPI_Irecv(
+        sendCounts,
+        worldSize,
+        MPI_INT,
+        min_rank,
+        0,
+        communicator,
+        request
+    );
+    
+    MPI_Irecv(
+        recvCounts,
+        worldSize,
+        MPI_INT,
+        min_rank,
+        1,
+        communicator,
+        request + 1
+    );
+
+    // Wait for the receives to finish
+    MPI_Waitall(2, request, MPI_STATUSES_IGNORE);
+
+    MPI_Request *exchangeRequest = (MPI_Request *)malloc(worldSize * sizeof(MPI_Request));  // TODO: free this
+
+    // based on the send and receive arrays start the exchange of points between the processes
+    for (int i = 0; i < worldSize; i++){
+        if(sendCounts[i] != 0){
+            MPI_Isend(
+                *points + *numPoints - sendCounts[i],
+                sendCounts[i],
+                MPI_INT,
+                i,
+                0,
+                communicator,
+                exchangeRequest + i
+            );
+
+            *numPoints -= sendCounts[i];
+
+        } else if(recvCounts[i] != 0){
+            int *receivedPoints = (int *)malloc(recvCounts[i] * sizeof(int));  // TODO free this
+
+            MPI_Recv(
+                receivedPoints,
+                recvCounts[i],
+                MPI_INT,
+                i,
+                0,
+                communicator,
+                MPI_STATUS_IGNORE
+            );
+
+            *numPoints += recvCounts[i];
+
+            *points = (int *)realloc(*points, *numPoints * sizeof(int));  // TODO free this
+
+            memcpy(*points + *numPoints - recvCounts[i], receivedPoints, recvCounts[i] * sizeof(int));
+
+            free(receivedPoints);
+        }
+    }
+
+    // Wait for the sends to finish
+    for (int i = 0; i < worldSize; i++){
+        if(sendCounts[i] != 0){
+            MPI_Wait(exchangeRequest + i, MPI_STATUS_IGNORE);
+        }
+    }
+
+    free(sendCounts);
+    free(recvCounts);
+    free(exchangeRequest);
+
+    // printf("\t\t\t\tfinal points\n\t\t\t\t");
+
+    // for(int i = 0; i < *numPoints; i++){
+    //     printf("%d ", points[i]);
+    // }
+    // printf("\n");
+}
+
 
 /**
  * This is the function that all processes, except the master, run. In this function all the computations and
