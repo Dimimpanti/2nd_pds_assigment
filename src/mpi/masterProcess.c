@@ -8,6 +8,277 @@
 
 
 #define endRecursion 100
+/**
+ * @brief Balance the number of points that remain in the array of each process
+ * 
+ * @param points        The array of points
+ * @param masterPoints  The number of points that the master process has
+ * @param numPoints     The total number of points
+ * @param worldSize     The total number of processes
+ * @param min_rank      The smallest rank
+ * @param max_rank      The biggest rank
+ * @param pointsPerProc The array that holds the number of points of each process
+ * @param communicator  The communicator of the processes grouped together
+ * 
+ */
+void balancePointsMaster(int **points, int *masterPoints, int numPoints, int worldSize, int min_rank, int max_rank, int *pointsPerProc, MPI_Comm communicator){
+    
+    // the master process must calculate the exchange of points between the processes so that the number of points
+    // in each process is balanced
+
+    // the number of points that each process should have
+    int pointsPerProcess = numPoints / worldSize;
+
+    // the remainder of the division
+    int remainder = numPoints % worldSize;
+
+    // the number of points that each process should have after the exchange
+    int *newPointsPerProc = (int *)malloc(worldSize * sizeof (int));  // TODO free this DONE
+
+    // fill the newPointsPerProc array with the pointsPerProcess value
+    for (int i = 0; i < worldSize; ++i) {
+        newPointsPerProc[i] = pointsPerProcess;
+    }
+
+    // add the remainder shared equally to all the processes
+    for (int i = 0; i < remainder; ++i) {
+        newPointsPerProc[i]++;
+    }
+
+    // the number of points that each process will give to the other processes
+    int *pointsToGive = (int *)malloc(worldSize * sizeof (int));  // TODO free this DONE
+
+    // the number of points that each process will receive from the other processes 
+    int *pointsToReceive = (int *)malloc(worldSize * sizeof (int));  // TODO free this DONE
+
+    // calculate the pointsToGive and pointsToReceive arrays
+    for (int i = 0; i < worldSize; ++i) {
+        if (pointsPerProc[i] > newPointsPerProc[i]) {
+            pointsToGive[i] = pointsPerProc[i] - newPointsPerProc[i];
+            pointsToReceive[i] = 0;
+        } else {
+            pointsToGive[i] = 0;
+            pointsToReceive[i] = newPointsPerProc[i] - pointsPerProc[i];
+        }
+    }
+
+    free(newPointsPerProc);
+
+
+    // This 2D array holds the points that each process will give to the other processes
+    int **pointsToSend = (int **)malloc(worldSize * sizeof (int *));  // TODO free this DONE
+
+    // Allocate memory for the pointsToSend array
+    for (int i = 0; i < worldSize; ++i) {
+        pointsToSend[i] = (int *)calloc(worldSize, sizeof (int));  // TODO free this DONE
+    }
+    
+    int pointsToReceiveIndex = 0;
+
+    // fill the pointsToSend array
+    for (int i = 0; i < worldSize; i++) {
+        int give = pointsToGive[i];
+
+        if (give == 0) {
+            continue;
+        }
+
+        // find the first process that has points to receive
+        for (int j = pointsToReceiveIndex; j < worldSize; j++) {
+            if (i != j) {
+
+                // if the process has points to receive
+                if (pointsToReceive[j] != 0) {
+
+                    // if the process has less points to receive than the process has to give
+                    if (give > pointsToReceive[j]) {
+
+                        // satisfy the process with the points it needs
+                        pointsToSend[i][j] = pointsToReceive[j];
+
+                        // decrease the number of points that the process has to give
+                        give -= pointsToReceive[j];
+
+                        // the process has no more points to receive
+                        pointsToReceive[j] = 0;
+                        
+                        // increase the index of the process that has points to receive
+                        pointsToReceiveIndex++;
+
+                    }
+                    // if the process has equal points to receive 
+                    else if (give == pointsToReceive[j]) {
+
+                        // satisfy the process with the points it needs
+                        pointsToSend[i][j] = give;
+
+                        // the process has no more points to receive
+                        pointsToReceive[j] = 0;
+
+                        // increase the index of the process that has points to receive
+                        pointsToReceiveIndex++;
+
+                        break;
+
+                    } 
+                    // if the process has more points to receive than the process has to give
+                    else {
+
+                        // satisfy the process with the points it needs
+                        pointsToSend[i][j] = give;
+
+                        // decrease the number of points that the process has to receive
+                        pointsToReceive[j] -= give;
+
+                        break;
+                    }
+                } else {  // if the process has no points to receive
+
+                    // increase the index of the process that has points to receive
+                    pointsToReceiveIndex++;
+                }
+
+            } else {  // if the process is the same as the process that has points to give
+
+                // increase the index of the process that has points to receive
+                pointsToReceiveIndex++;
+            }
+        }
+        
+        // if all the processes have received the points they need we can stop the loop
+        if (pointsToReceiveIndex == worldSize) {
+            break;
+        }
+    }
+
+    free(pointsToGive);
+    free(pointsToReceive);
+
+    // Each row of the pointsToSend array holds the number of points that each process will give to the other processes
+    // Each column of the pointsToSend array holds the number of points that each process will receive from the other processes
+    // Send the row and the column of the pointsToSend array to the corresponding processes
+
+    // Allocate memory for the requests array
+    MPI_Request *requests = (MPI_Request *)malloc((worldSize - 1) * 2 * sizeof (MPI_Request));  // TODO free this DONE
+
+    // Send the row of the pointsToSend array to the corresponding processes
+    for (int i = 1; i < worldSize; ++i) {
+        MPI_Isend(
+            pointsToSend[i],
+            worldSize,
+            MPI_INT,
+            i,
+            0,
+            communicator,
+            requests + i - 1
+        );
+    }
+
+    // Send the column of the pointsToSend array to the corresponding processes
+    int **columns = (int **)malloc(worldSize * sizeof (int *));  // TODO free this DONE
+
+    for (int i = 0; i < worldSize; ++i) {
+        columns[i] = (int *)malloc(worldSize * sizeof (int));  // TODO free this DONE
+    }
+
+    // transpose the pointsToSend array to get the columns
+    for (int i = 0; i < worldSize; ++i) {
+        for (int j = 0; j < worldSize; ++j) {
+            columns[i][j] = pointsToSend[j][i];
+        }
+    }
+
+    // send the columns to the corresponding processes
+    for (int i = 1; i < worldSize; ++i) {
+
+        MPI_Isend(
+            columns[i],
+            worldSize,
+            MPI_INT,
+            i,
+            1,
+            communicator,
+            requests + i + worldSize - 2
+        );
+    }
+
+    // wait for all the sends to complete
+    MPI_Waitall(2 * (worldSize - 1), requests, MPI_STATUS_IGNORE);
+    free(requests);
+
+    requests = (MPI_Request *)malloc(worldSize * sizeof (MPI_Request));  // TODO free this DONE
+
+    // based on the send and receive arrays start the exchange of points between the processes
+    for (int j = 0; j < worldSize; j++) {
+        if (pointsToSend[0][j] != 0) {
+            MPI_Isend(
+                *points + *masterPoints - pointsToSend[0][j],
+                pointsToSend[0][j],
+                MPI_INT,
+                j,
+                0,
+                communicator,
+                requests + j
+            );
+
+            *masterPoints -= pointsToSend[0][j];
+        
+        } else if (columns[0][j] != 0) {
+            int *receivedPoints = (int *)malloc(columns[0][j] * sizeof(int));  // TODO free this DONE
+
+            MPI_Recv(
+                receivedPoints,
+                columns[0][j],
+                MPI_INT,
+                j,
+                0,
+                communicator,
+                MPI_STATUS_IGNORE
+            );
+
+           *masterPoints += columns[0][j];
+
+           int numPoints = *masterPoints;
+
+            int *tmp = (int *)realloc(*points, numPoints * sizeof(int));
+
+            if (tmp == NULL) {
+                printf("Error reallocating memory.\n");
+                exit(EXIT_FAILURE);
+            } else {
+                *points = tmp;
+            }
+
+            memcpy(*points + numPoints - columns[0][j], receivedPoints, columns[0][j] * sizeof(int));
+
+            free(receivedPoints);
+        }
+    }
+
+
+    // wait for all the sends to complete
+    for (int i = 0; i < worldSize; ++i) {
+        if (pointsToSend[0][i] != 0) {
+            MPI_Wait(requests + i, MPI_STATUS_IGNORE);
+        }
+    }
+
+    free(requests);
+
+    // free the pointsToSend array
+    for (int i = 0; i < worldSize; ++i) {
+        free(pointsToSend[i]);
+    }
+
+    free(pointsToSend);
+
+    // free the columns array
+    for (int i = 0; i < worldSize; ++i) {
+        free(columns[i]);
+    }
+
+    free(columns);
+}
 
 /**
  * This is the function of the master processes. Here the k-th smallest value is calculated and  all the processes
