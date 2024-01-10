@@ -1,8 +1,11 @@
 #include "masterProcess.h"
 
+#include "masterProcess.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
 
 #include "partition.h"
 

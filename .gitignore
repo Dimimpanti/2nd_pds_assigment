@@ -1,3 +1,5 @@
-*.txt
-make-build*/
 .vscode/
+*.code-workspace
+*.out
+*build*/
+*.txt
