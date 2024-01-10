@@ -4,16 +4,27 @@
 #include <limits.h>
 
 #include "../partition.h"
+#include "../structs.h"
+#include "masterProcess.h"
+#include "slaveProcess.h"
 
 
-
-int *readFromFile(char *fileName, int rank, int worldSize, int *values) {
+/**
+ * @brief Every process reads it's part of the array from the file
+ * 
+ * @param fileName   The name of the file
+ * @param rank       The rank of the current process
+ * @param worldSize  The total number of processes
+ * @param numValues  The number of values that the current process will handle
+ * @return int*      
+ */
+int *readFromFile(char *fileName, int rank, int worldSize, int *numValues) {
    
-   FILE *file = NULL;  // File pointer
-    file = fopen("data.txt", "r");  // Open the file for reading
+    FILE *file = fopen(fileName, "r");  // Open the file for reading
 
     // Check if the file is open
     if (file == NULL) {
+
         if (rank == 0) {
             printf("\nCan not find file %s. Program will now exit...\n\n", fileName);
         }
@@ -23,24 +34,33 @@ int *readFromFile(char *fileName, int rank, int worldSize, int *values) {
         exit(0);
     }
 
-    int numOfInts;  // The number of elements in the file
+    int numOfInts = 0;  // The number of elements in the file
+    int tmp;        // Temporary variable for reading the file
 
-   // Read the total elements from the file
-    fread(&numOfInts, sizeof(int), 1, file);
-
-    // Calculate the size of the array that each process will have to handle 
-    int intsPerProcess = numOfInts / worldSize;
+    // count the number of integers in the file
+    while (fscanf(file, "%d", &tmp) != EOF) {
+        numOfInts++;
+    }
     
-    printf("Each process will handle %d integers\n", intsPerProcess);
+    // Move the file pointer to the start of the file
+    fseek(file, 0, SEEK_SET);
 
-    // Move file pointer to the start position for the current process
-    fseek(file, rank * intsPerProcess * sizeof(int), SEEK_SET);
+    // Calculate the size of the array that each process will have to handle. The remainder is discarded.
+    *numValues = numOfInts / worldSize;
+    
+    // skip the integers that the previous processes will handle
+    for (int i = 0; i < rank * (*numValues); i++) {
+        fscanf(file, "%d", &tmp);
+    }
+    
 
     // Allocate memory for the local array
-    values = (int *)malloc(intsPerProcess * sizeof(int));
+    int *values = (int *)malloc(*numValues * sizeof(int));  // TODO free this memory
 
     // Read the integers for the current process
-    fread(values, sizeof(int), intsPerProcess, file);
+    for (int i = 0; i < *numValues; i++) {
+        fscanf(file, "%d", &values[i]);
+    }
 
     // Close the file
     fclose(file);
@@ -54,12 +74,14 @@ int main(int argc, char **argv) {
     //Initialize the MPI communication
     MPI_Init(&argc, &argv);
 
-    double start, end;  // Time measuring
-    
+
+    if (argc != 3) {
+        printf("\nUsage: %s <input_file> <k>\n\n", argv[0]);
+        MPI_Finalize();
+        exit(EXIT_FAILURE);
+    }
+
     Info info;  // The info struct holds information for every process 
-    int min_rank = 0;
-    int max_rank = info.world_size;
-    
     
     // Get the number of processes
     MPI_Comm_size(MPI_COMM_WORLD, &info.world_size);
@@ -70,30 +92,44 @@ int main(int argc, char **argv) {
 
 
     // Read data from the file
-    info.A = readFromFile(argv[1], info.world_rank, info.world_size, info.A);
+    info.A = readFromFile(argv[1], info.world_rank, info.world_size, &info.size);
 
-     // Time measurement starts after the points are read
+    double start, end;  // Time measuring
+    // Time measurement starts after the points are read
     if (info.world_rank == 0){
         start = MPI_Wtime();
     }
 
+    int result;  // The result of the algorithm
+    int k = atoi(argv[2]);  // parse the k-th smallest element from the command line arguments
+    info.k = k;  // The k-th smallest element
+    
+
+    int min_rank = 0;
+    int max_rank = info.world_size - 1;
+    
     if (info.world_rank == 0) {
-        masterProcess(info.world_rank, min_rank, max_rank, &info, MPI_COMM_WORLD);
+        masterProcess(0, min_rank, max_rank, &info, MPI_COMM_WORLD, &result);
     } else {
-        slaveProcess(info.world_rank, min_rank, max_rank, &info, MPI_COMM_WORLD);
+        slaveProcess(0, min_rank, max_rank, &info, MPI_COMM_WORLD);
     }
 
+    // Print the result
+    if (info.world_rank == 0) {
+        printf("\nThe %d-th smallest element is: %d\n", k, result);
+    }
 
     // Wait here for all the processes to finish before time measurement
     MPI_Barrier(MPI_COMM_WORLD);
    
-   //Time measurement ends here
+    // Time measurement ends here
     if (info.world_rank == 0){
         end = MPI_Wtime();
 
-        printf("\nTime for execution: %.6f\n", end - start);
+        printf("\nTime for MPI execution: %.6fs\n", end - start);
 
     }
+
 
     // Finalize the MPI environment.
     MPI_Finalize();
